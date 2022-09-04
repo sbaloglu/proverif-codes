@@ -1,0 +1,434 @@
+(*
+BeleniosRF ProVerif model for verifiability with the adversary A2, i.e.
+
+- Corrupted Voter (modeled with LeakCredential process), and
+- Corrupted Trustee (modeled with CorruptedTrustee process).
+
+In this model, we check:
+
+- Individual Verifiability 1 (IV1),
+- Individual Verifiability 2 (IV2) for no clash property on Verified(id, cr, v),
+- Individual Verifiability 3 (IV3) for eligibility of Verified(id, cr, v),
+- Eligibility Verifiability (ELI) for BB_tally(cr, b),
+- Result 1 Property (RES1) for strong verifiability definition,
+- Result 2 Property (RES2) for weak verifiability definition,
+- Consistency Properties (REG1 & REG2) for Reg(id, cr),
+- Consistency Property (ONE) for BB_tally(cr, b).
+
+More specifically,
+
+- Strong E2E verifiability for honest/corrupted voters:
+    IV1, IV2, IV3, ELI, RES1, REG1, REG2, ONE
+- Weak E2E verifiability for honest/corrupted voters:
+    IV1, IV2, IV3, ELI, RES2, REG1, REG2, ONE
+
+In the case of falsified IV1, IV2, or IV3, we also check:
+
+- Weak Individual Verifiability 1 (WIV1),
+- Weak Individual Verifiability 2 (WIV2),
+- Weak Individual Verifiability 3 (WIV3),
+
+for honest voters who verified their vote when corrupted voters existed
+during the election. In that case, we will regard the result for WIV1, WIV2,
+or WIV3 instead of IV1, IV2, or IV3 for honest voters.
+
+Notes:
+
+- In this model, we only tally the non-empty ballots so that we ignore the cases
+  with empty votes in the definition.
+- Reg(id, cr) is modeled in the process of Registrar since the registrar is honest.
+
+Results:
+
+- Success: IV1: false
+           WIV1, IV2, IV3, ELI, RES1, RES2, REG1, REG2, ONE: true
+- Execution Time: 16.409s
+- Attacks: IV1 attack on corrupted voters
+- Outcome: Strong/Weak E2E verifiability is NOT satisfied for corrupted voters.
+           Strong/Weak E2E verifiability is satisfied for honest voters.
+
+*)
+
+(*** DECLARATIONS ***)
+
+free pub: channel.
+
+const empty: bitstring.
+const ok: bitstring.
+
+type skey.
+type pkey.
+type sskey.
+type spkey.
+
+(* ELGamal encryption *)
+
+fun pk(skey): pkey.
+fun enc(bitstring, pkey, bitstring): bitstring.
+fun proof_enc(bitstring, bitstring, bitstring, spkey): bitstring.
+
+reduc forall m: bitstring, skT: skey, r: bitstring;
+      dec(enc(m, pk(skT), r), skT) = m.
+reduc forall m: bitstring, pkT: pkey, r1, r2:bitstring;
+      renc(enc(m, pkT, r1), pkT, r2) = enc(m, pkT, r2).
+reduc forall m: bitstring, pkT: pkey, r: bitstring, cr: spkey;
+      ver_enc(proof_enc(enc(m, pkT, r), m, r, cr), enc(m, pkT, r), pkT, cr) = ok.
+reduc forall m, r1, r2: bitstring, pkT: pkey, cr: spkey;
+      repr_enc(proof_enc(enc(m, pkT, r1), m, r1, cr), pkT, r2, cr)
+      = proof_enc(enc(m, pkT, r2), m, r2, cr).
+
+(* Digital signature *)
+
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+
+reduc forall m: bitstring, skV: sskey;
+      check(sign(m, skV), spk(skV)) = m.
+reduc forall m, r1, r2: bitstring, pkT: pkey, skV: sskey;
+      resign(sign(enc(m, pkT, r1), skV), pkT, r2) = sign(enc(m, pkT, r2), skV).
+
+(* Hashing *)
+
+fun h(bitstring, bitstring, spkey, bitstring): bitstring.
+
+(* Equality *)
+
+fun eq(bitstring, bitstring): bool
+
+reduc forall x: bitstring; eq(x,x) = true
+otherwise forall x: bitstring, y: bitstring; eq(x,y) = false.
+
+
+(* Bulletin Board *)
+
+table BBkey(pkey).
+table BBcand(bitstring).
+table BBreg(spkey).
+table BBcast(spkey, bitstring).
+table BBtally(spkey, bitstring).
+
+(* Facts to be recorded *)
+
+table Id(bitstring).
+table Cred(bitstring, spkey, sskey).
+table Pwd(bitstring, bitstring).
+table Voted(bitstring, spkey, bitstring).
+
+(*** EVENTS ***)
+
+event BB_key(pkey).
+event BB_cand(bitstring, bitstring).
+event BB_reg(spkey).
+event BB_cast(spkey, bitstring).
+event BB_tally(spkey, bitstring).
+event SelectBallot(spkey, bitstring).
+event Credential(bitstring, spkey, sskey).
+event Reg(bitstring, spkey).
+event Log(bitstring, spkey).
+event Vote(bitstring, bitstring).
+event Verified(bitstring, spkey, bitstring).
+event Corrupted(bitstring).
+
+
+(* RESTRICTIONS *)
+
+(* to ensure there is only one election key *)
+restriction pkT1, pkT2: pkey;
+            event(BB_key(pkT1)) && event(BB_key(pkT2)) ==> pkT1 = pkT2.
+
+(* to ensure there are two candidates *)
+restriction v1, v2, v3, v4: bitstring;
+            event(BB_cand(v1, v2)) && event(BB_cand(v3, v4))
+            ==> v1 = v3 && v2 = v4.
+
+(* to ensure each voter has one signature key pair *)
+restriction id: bitstring, cr1, cr2: spkey, skV1, skV2: sskey;
+            event(Credential(id, cr1, skV1)) && event(Credential(id, cr2, skV2))
+            ==> cr1 = cr2 && skV1 = skV2.
+
+(* to ensure log consistency *)
+restriction id: bitstring, cr1, cr2: spkey;
+            event(Log(id, cr1)) && event(Log(id, cr2)) ==> cr1 = cr2.
+restriction id1, id2: bitstring, cr: spkey;
+            event(Log(id1, cr)) && event(Log(id2, cr)) ==> id1 = id2.
+
+(* to ensure only one vote is cast for each credential *)
+restriction id: bitstring, v, v1: bitstring;
+            event(Vote(id, v)) && event(Vote(id, v1)) ==> v = v1.
+
+(* to ensure only one ballot is tallied for each credential *)
+restriction cr: spkey, b, b1: bitstring;
+            event(BB_tally(cr, b)) && event(BB_tally(cr, b1)) ==> b = b1.
+
+(* to ensure each cast is eligible, i.e. credential is recorded before *)
+restriction cr: spkey, b: bitstring;
+            event(BB_cast(cr, b)) ==> event(BB_reg(cr)).
+
+(* at most one ballot selected to be tallied for each credential *)
+restriction cr: spkey, n1, n2: bitstring;
+            event(SelectBallot(cr, n1)) && event(SelectBallot(cr, n2)) ==> n1 = n2.
+
+(*** QUERIES ***)
+
+(* Reachability queries *)
+(*
+query cr: spkey; event(BB_reg(cr)).
+query cr: spkey, b: bitstring; event(BB_tally(cr, b)).
+query id: bitstring, cr: spkey; event(Reg(id, cr)).
+query id, v: bitstring; event(Vote(id, v)).
+query id, v: bitstring, cr: spkey; event(Verified(id, cr, v)).
+query id: bitstring; event(Corrupted(id)).
+*)
+
+(* Verifiability queries *)
+
+(* Individual Verifiability 1 *)
+
+query id, v, c, s, pr, r: bitstring, cr: spkey, pkT: pkey;
+      event(Verified(id, cr, v)) && event(BB_tally(cr, (c, s, pr)))
+      ==> event(BB_key(pkT)) && c = enc(v, pkT, r).
+
+(* Weak Individual Verifiability 1 *)
+
+query id, v, c, s, pr, r: bitstring, cr: spkey, pkT: pkey;
+      event(Verified(id, cr, v)) && event(BB_tally(cr, (c, s, pr)))
+      ==> ( event(BB_key(pkT)) && c = enc(v, pkT, r) )
+       || ( event(Corrupted(id)) ).
+
+(* Individual Verifiability 2 *)
+
+query id1, id2, v1, v2: bitstring, cr: spkey;
+      event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2)) ==> id1 = id2.
+
+(* Weak Individual Verifiability 2 *)
+(*
+query id1, id2, v1, v2: bitstring, cr: spkey;
+      event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
+      ==> id1 = id2 || event(Corrupted(id1)) || event(Corrupted(id2)).
+*)
+
+(* Individual Verifiability 3 *)
+
+query id: bitstring, cr: spkey, v: bitstring;
+      event(Verified(id, cr, v)) ==> event(BB_reg(cr)).
+
+(* Weak Individual Verifiability 3 *)
+(*
+query id: bitstring, cr: spkey, v: bitstring;
+      event(Verified(id, cr, v)) ==> event(BB_reg(cr)) || event(Corrupted(id)).
+*)
+
+(* Eligibility Verifiability *)
+
+query id: bitstring, cr: spkey, b: bitstring;
+      event(BB_tally(cr, b)) ==> event(BB_reg(cr)) && event(Reg(id, cr)).
+
+(* Result 1 Property *)
+
+query cr: spkey, id, v, c, s, pr, r: bitstring, pkT: pkey;
+      event(BB_tally(cr, (c, s, pr))) && event(Reg(id, cr))
+      ==> ( event(Vote(id, v)) && event(BB_key(pkT)) && c = enc(v, pkT, r) )
+       || ( event(Corrupted(id)) ).
+
+(* Result 2 Property *)
+
+query cr: spkey, id, v, v1, c, s, pr, r: bitstring, pkT: pkey;
+      event(Verified(id, cr, v1)) && event(BB_tally(cr, (c, s, pr))) && event(Reg(id, cr))
+      ==> ( event(Vote(id, v)) && event(BB_key(pkT)) && c = enc(v, pkT, r) )
+       || ( event(Corrupted(id)) ).
+
+(* Consistency properties *)
+
+(* Reg 1 *)
+
+query id1, id2: bitstring, cr: spkey;
+      event(Reg(id1, cr)) && event(Reg(id2, cr)) ==> id1 = id2.
+
+(* Reg 2 *)
+
+query id: bitstring, cr1, cr2: spkey;
+      event(Reg(id, cr1)) && event(Reg(id, cr2)) ==> cr1 = cr2.
+
+(* One *)
+
+query cr: spkey, b, b1: bitstring, i, j: time;
+      event(BB_tally(cr, b)) @i && event(BB_tally(cr, b1)) @j ==> i = j.
+
+
+(*** MACROS ***)
+
+(***** Administrator *****)
+
+let SetupCandidates =
+  (* receive candidates from public channel *)
+	in(pub, (v1: bitstring, v2: bitstring));
+  (* if candidates are different then *)
+  if v1 <> v2 then
+  event BB_cand(v1, v2);
+  (* publish first candidate on BBcand *)
+	insert BBcand(v1);
+  (* publish second candidate on BBcand *)
+	insert BBcand(v2).
+
+let SetupVoters =
+  (* receive a voter identity from public channel *)
+	in(pub, id: bitstring);
+  (* record voter identity on Id *)
+	insert Id(id).
+
+let Administrator = ( SetupCandidates | (!SetupVoters) ).
+
+
+(***** Trustee *****)
+
+let CorruptedTrustee =
+  (* receive secret key of election from public channel *)
+  in(pub, skT: skey);
+  (* compute corresponding public key *)
+  let pkT = pk(skT) in
+  event BB_key(pkT);
+  (* publish public key on BBkey *)
+  insert BBkey(pkT).
+
+
+(***** Registrar *****)
+
+let Registrar =
+  (* get a voter identity from Id *)
+  get Id(id) in
+  (* generate a signing key for the voter *)
+ 	new skV: sskey;
+  (* compute corresponding public key *)
+ 	let cr = spk(skV) in
+  event Credential(id, cr, skV);
+  (* record id with signature key pair on Cred *)
+  insert Cred(id, cr, skV);
+  event Reg(id, cr);
+  event BB_reg(cr);
+  (* publish verification key, i.e. credential, on BBreg *)
+ 	insert BBreg(cr);
+  (* send credential to the public channel for accessibility of adversary to BB *)
+ 	out(pub, cr).
+
+
+(***** Server *****)
+
+let GeneratePassword(id: bitstring) =
+  (* generate a password for id *)
+  new pwd: bitstring;
+  (* record password for id on Pwd *)
+  insert Pwd(id, pwd).
+
+let PrepareBulletinBoard =
+  (* get a voter public key from BBreg *)
+  get BBreg(cr) in
+  (* publish cr & empty (to be used for the ballot) on BBcast *)
+  insert BBcast(cr, empty).
+
+let CastBallot(pkT: pkey) =
+  (* recall password of id from Pwd *)
+  get Pwd(id, pwd) in
+  (* get tuple associated to cr from BBcast *)
+  get BBcast(cr, =empty) in
+  (* receive an authenticated ballot from public channel *)
+  in(pub, (=id, =cr, (c:bitstring, s:bitstring, pr_enc:bitstring), hash:bitstring));
+  (* ballot specification *)
+  let b = (c, s, pr_enc) in
+  (* authenticate cr with recalled pwd *)
+  if eq(h(id, pwd, cr, b), hash) then
+  (* verify signature and proof of encryption in the ballot *)
+  if check(s, cr) = c then
+  if ver_enc(pr_enc, c, pkT, cr) = ok then
+  (* generate randomness for re-encryption *)
+  new r1: bitstring;
+  (* re-encrypt ciphertext and adapt signature & proof *)
+  let c1 = renc(c, pkT, r1) in
+  let s1 = resign(s, pkT, r1) in
+  let pr1 = repr_enc(pr_enc, pkT, r1, cr) in
+  (* randomized ballot specification *)
+  let b1 = (c1, s1, pr1) in
+  event Log(id, cr);
+  event BB_cast(cr, b1);
+  (* publish ballot w.r.t. the credential on BBcast *)
+  insert BBcast(cr, b1).
+
+let TallyBallot =
+  (* get ballot for cr from BBcast if it is not empty *)
+  get BBcast(cr, b) suchthat b <> empty in
+  (* generate a nonce to select at most one ballot for result consistency *)
+  new nonce: bitstring;
+  event SelectBallot(cr, nonce);
+  event BB_tally(cr, b);
+  (* publish ballot on BBtally *)
+  insert BBtally(cr, b);
+  (* send recorded information on BBtally to the public channel *)
+  out(pub, (cr, b)).
+
+let Server =
+  get Id(id) in
+  get BBkey(pkT) in
+  ( GeneratePassword(id) | PrepareBulletinBoard | (!CastBallot(pkT)) | TallyBallot ).
+
+
+(***** Voters *****)
+
+let LeakCredential =
+  (* get password from Pwd *)
+  get Pwd(id, pwd) in
+  (* get credentials from Cred *)
+  get Cred(=id, cr, skV) in
+  event Corrupted(id);
+  (* send credentials to the public channel, i.e. to the adversary *)
+  out(pub, (id, pwd, cr, skV)).
+
+let VerifyVote(id: bitstring) =
+  (* get public key from BBkey to use it for the verification *)
+  get BBkey(pkT) in
+  (* get vote from Voted *)
+	get Voted(=id, cr, v) in
+  (* get tallied ballot from BBtally *)
+  get BBtally(=cr, (c: bitstring, s: bitstring, pr_enc: bitstring)) in
+  (* if signature and proof are verified then *)
+	if check(s, cr) = c then
+  if ver_enc(pr_enc, c, pkT, cr) = ok then
+	event Verified(id, cr, v).
+
+let Voters =
+  get Id(id) in
+  ( LeakCredential | VerifyVote(id) ).
+
+
+(***** Voting Platform *****)
+
+let VotingPlatform =
+  (* choose a candidate from BBcand *)
+  get BBcand(v) in
+  (* get public key from BBkey *)
+	get BBkey(pkT) in
+  (* get own password from Pwd *)
+  get Pwd(id, pwd) in
+  (* get own signature pair from Cred *)
+  get Cred(=id, cr, skV) in
+  (* generate a randomness for encryption *)
+	new r: bitstring;
+  (* encrypt the vote *)
+	let c = enc(v, pkT, r) in
+  (* sign encryption of the vote *)
+	let s = sign(c, skV) in
+  (* generate proof of encryption for the credential cr *)
+	let pr_enc = proof_enc(c, v, r, cr) in
+  (* ballot as a tuple of ciphertext, signature and proof *)
+  let b = (c, s, pr_enc) in
+  (* authenticate ballot with password *)
+	let a = h(id, pwd, cr, b) in
+  event Vote(id, v);
+  (* record ballot w.r.t. the vote on Voted *)
+	insert Voted(id, cr, v);
+  (* send authenticated ballot to the public channel *)
+	out(pub, (id, cr, b, a)).
+
+
+(*** MAIN PROCESS ***)
+
+process	 ( Administrator | CorruptedTrustee | (!Registrar) | (!Server)
+         | (!Voters) | (!VotingPlatform) )
