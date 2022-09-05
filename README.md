@@ -20,16 +20,16 @@ voters for i=1,2,3.
 RES1 represents strong E2E verifiability with res_\bullet, whereas RES2 represents weak E2E verifiability 
 with res_\circ. 
 
-For the Hyperion codes for A2, A3, A4, A5 and A6,  we check iv_\circ by defining an event Honest(id) 
+For the Hyperion codes for A2, A3, and A4, we check iv_\circ by defining an event Honest(id) 
 and adding the following restriction:
 
 restriction id: bitstring;
             event(Honest(id)) && event(Corrupted(id)) ==> false.
             
-This allows us to terminate the queries for honest voters in different files hyperion-ai-iv-circ.pv for i=2,3,4,5,6. 
+This allows us to terminate the queries for honest voters in different files hyperion-ai-iv-circ.pv for i=2,3,4. 
 
 Moreover, we check iv_\bullet regarding corrupted voters for some queries since the others cause 
-non-termination issue. However, in the files hyperion-ai-iv-bullet.pv for i=2,3,4,5,6,  
+non-termination issue. However, in the files hyperion-ai-iv-bullet.pv for i=2,3,4,  
 the falsifications on queries show the attacks on corrupted voters violating E2E verifiability. 
 
 
