@@ -45,7 +45,7 @@ Results:
 
 - Success: IV1, IV3, RES1: false
            WIV1, IV2, WIV3, ELI, RES2, REG1, REG2, LINK1, LINK2, ONE: true
-- Execution Time: 27:54.86s ~ 28m
+- Execution Time: 21:14.91s ~ 21m
 - Attacks: IV1 and IV3 attacks on corrupted voters, and ballot stuffing captured by RES1
 - Outcome: Strong/Weak E2E verifiability is NOT satisfied for corrupted voters.
            Strong E2E verifiability is NOT satisfied for honest voters.
