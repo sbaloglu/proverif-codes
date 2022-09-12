@@ -33,9 +33,9 @@ Notes:
 Results:
 
 - Success: IV3: false
-           ELI, REG1, REG2, LINK1, LINK2, ONE: true
-           IV1, IV2, RES1, RES2: non-term
-- Execution Time: 12:04.43s ~ 12m (all except IV1 and IV2)
+           ELI, RES1, REG1, REG2, LINK1, LINK2, ONE: true
+           IV1, IV2, RES2: non-term
+- Execution Time: 35:37.28s ~ 35m (all except IV1, IV2 and RES2)
 - Attacks: IV3 attack on corrupted voters
 - Outcome: Strong/Weak E2E verifiability is NOT satisfied for corrupted voters.
 
@@ -241,13 +241,13 @@ query cr: spkey; event(LinkFailed(cr)).
 (* Verifiability queries *)
 
 (* Individual Verifiability 1 *)
-(*)
+(*
 query id, tr, v, v1: bitstring, cr: spkey;
       event(Verified(id, cr, v)) && event(Link(cr, tr)) && event(BB_res(tr, v1))
       ==> v = v1.
 *)
 (* Individual Verifiability 2 *)
-(*)
+(*
 query id1, id2, v1, v2: bitstring, cr: spkey;
       event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
       ==> id1 = id2.
@@ -265,17 +265,18 @@ query id, tr, v: bitstring, cr: spkey;
       ==> event(Link(cr, tr)) && event(BB_reg(cr)) && event(Reg(id, cr)).
 
 (* Result 1 Property *)
-(*
+
 query id, tr, v: bitstring, cr: spkey;
       event(BB_res(tr, v)) && event(Link(cr, tr)) && event(Reg(id, cr))
       ==> event(Vote(id, v)) || event(Corrupted(id)).
-*)
+
 (* Result 2 Property *)
-(*)
+(*
 query id, tr, v, v1: bitstring, cr: spkey;
       event(Verified(id, cr, v1)) && event(BB_res(tr, v)) && event(Link(cr, tr)) && event(Reg(id, cr))
       ==> event(Vote(id, v)) || event(Corrupted(id)).
 *)
+
 (* Consistency properties *)
 
 (* Reg 1 *)

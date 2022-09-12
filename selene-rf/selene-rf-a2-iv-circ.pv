@@ -6,9 +6,16 @@ SeleneRF ProVerif model for verifiability with the adversary A2, i.e.
 
 In this model, we check:
 
-- Individual Verifiability 1 (IV1),
-- Individual Verifiability 2 (IV2) for no clash property on Verified(id, cr, v),
-- Individual Verifiability 3 (IV3) for eligibility of Verified(id, cr, v),
+- Weak Individual Verifiability 1 (WIV1),
+- Weak Individual Verifiability 2 (WIV2) for no clash property on Verified(id, cr, v),
+- Weak Individual Verifiability 3 (WIV3) for eligibility of Verified(id, cr, v),
+
+for honest voters who verified their vote when corrupted voters existed
+during the election. In that case, we will regard the result for WIV1, WIV2,
+or WIV3 instead of IV1, IV2, or IV3 for honest voters.
+
+We also check:
+
 - Eligibility Verifiability (ELI) for BB_res(tr, v),
 - Result 1 Property (RES1) for strong verifiability definition,
 - Result 2 Property (RES2) for weak verifiability definition,
@@ -18,20 +25,10 @@ In this model, we check:
 
 More specifically,
 
-- Strong E2E verifiability for honest/corrupted voters:
-    IV1, IV2, IV3, ELI, RES1, REG1, REG2, LINK1, LINK2, ONE
-- Weak E2E verifiability for honest/corrupted voters:
-    IV1, IV2, IV3, ELI, RES2, REG1, REG2, LINK1, LINK2, ONE
-
-In the case of falsified IV1, IV2, or IV3, we also check:
-
-- Weak Individual Verifiability 1 (WIV1),
-- Weak Individual Verifiability 2 (WIV2),
-- Weak Individual Verifiability 3 (WIV3),
-
-for honest voters who verified their vote when corrupted voters existed
-during the election. In that case, we will regard the result for WIV1, WIV2,
-or WIV3 instead of IV1, IV2, or IV3 for honest voters.
+- Strong E2E verifiability for honest voters:
+    WIV1, WIV2, WIV3, ELI, RES1, REG1, REG2, LINK1, LINK2, ONE
+- Weak E2E verifiability for honest voters:
+    WIV1, WIV2, WIV3, ELI, RES2, REG1, REG2, LINK1, LINK2, ONE
 
 Notes:
 
@@ -41,17 +38,12 @@ Notes:
 
 Results:
 
-- Success: IV1, IV3: false
-           WIV1, WIV3, ELI, RES1, RES2, REG1, REG2, LINK1, LINK2, ONE: true
-           IV2: non-term
-- Execution Time: 1:39:31.72s ~ 1h39m (all except IV2)
-- Attacks: IV1 and IV3 attacks on corrupted voters
-- Outcome: Strong/Weak E2E verifiability is NOT satisfied for corrupted voters.
-           Strong/Weak E2E verifiability is satisfied for honest voters.
+- Success: WIV1, WIV2, WIV3, ELI, RES1, RES2, REG1, REG2, LINK1, LINK2, ONE: true
+- Execution Time: 2:52.67s ~ 2m
+- Attacks: -
+- Outcome: Strong/Weak E2E verifiability is satisfied for honest voters.
 
 *)
-
-(*** DECLARATIONS ***)
 
 free pub: channel.
 
@@ -198,6 +190,7 @@ event Log(bitstring, spkey).
 event Vote(bitstring, bitstring).
 event Verified(bitstring, spkey, bitstring).
 event Corrupted(bitstring).
+event Honest(bitstring).
 event Mix(bitstring, bitstring).
 event Link(spkey, bitstring).
 event LinkFailed(spkey).
@@ -276,6 +269,10 @@ restriction tr: bitstring, etr: bitstring, v: bitstring;
 restriction tr, n1, n2: bitstring;
             event(SelectVote(tr, n1)) && event(SelectVote(tr, n2)) ==> n1 = n2.
 
+(* to ensure honest voters are not corrupted *)
+restriction id: bitstring;
+            event(Honest(id)) && event(Corrupted(id)) ==> false.
+
 (*** QUERIES ***)
 
 (* Reachability queries *)
@@ -287,16 +284,11 @@ query cr: spkey, tr: bitstring; event(Link(cr, tr)).
 query id, v: bitstring; event(Vote(id, v)).
 query id, v: bitstring, cr: spkey; event(Verified(id, cr, v)).
 query id: bitstring; event(Corrupted(id)).
+query id: bitstring; event(Honest(id)).
 query cr: spkey; event(LinkFailed(cr)).
 *)
 
 (* Verifiability queries *)
-
-(* Individual Verifiability 1 *)
-
-query id, tr, v, v1: bitstring, cr: spkey;
-      event(Verified(id, cr, v)) && event(Link(cr, tr)) && event(BB_res(tr, v1))
-      ==> v = v1.
 
 (* Weak Individual Verifiability 1 *)
 
@@ -304,24 +296,11 @@ query id, tr, v, v1: bitstring, cr: spkey;
       event(Verified(id, cr, v)) && event(Link(cr, tr)) && event(BB_res(tr, v1))
       ==> v = v1 || event(Corrupted(id)).
 
-(* Individual Verifiability 2 *)
-(*
-query id1, id2, v1, v2: bitstring, cr: spkey;
-      event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
-      ==> id1 = id2.
-*)
-
 (* Weak Individual Verifiability 2 *)
-(*
+
 query id1, id2, v1, v2: bitstring, cr: spkey;
       event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
       ==> id1 = id2 || event(Corrupted(id1)) || event(Corrupted(id2)).
-*)
-
-(* Individual Verifiability 3 *)
-
-query id, tr, v: bitstring, cr: spkey;
-      event(Verified(id, cr, v)) ==> event(Link(cr, tr)) && event(BB_reg(cr)).
 
 (* Weak Individual Verifiability 3 *)
 
@@ -662,6 +641,7 @@ let VotingPlatform =
   get Pwd(id, pwd) in
   (* get own signature pair from Cred *)
   get Cred(=id, cr, skV) in
+  event Honest(id);
   (* generate a randomness for encryption *)
 	new r: bitstring;
   (* encrypt the vote *)

@@ -24,6 +24,16 @@ More specifically,
 - Weak E2E verifiability for honest/corrupted voters:
     IV1, IV2, IV3, ELI, RES2, REG1, REG2, LINK1, LINK2, ONE
 
+In the case of falsified IV1, IV2, or IV3, we also check:
+
+- Weak Individual Verifiability 1 (WIV1),
+- Weak Individual Verifiability 2 (WIV2),
+- Weak Individual Verifiability 3 (WIV3),
+
+for honest voters who verified their vote when corrupted voters existed
+during the election. In that case, we will regard the result for WIV1, WIV2,
+or WIV3 instead of IV1, IV2, or IV3 for honest voters.
+
 Notes:
 
 - In this model, we only tally the non-empty ballots so that we ignore the cases
@@ -32,12 +42,14 @@ Notes:
 
 Results:
 
-- Success: IV3: false
-           ELI, RES1, RES2, REG1, REG2, LINK1, LINK2, ONE: true
-           IV1, IV2: non-term
-- Execution Time: 44:56.74s ~ 44m (all except IV1 and IV2)
-- Attacks: IV3 attack on corrupted voters
+- Success: IV1, IV3: false
+           WIV1, IV2, WIV3, ELI, RES1, RES2, REG1, REG2, LINK1, LINK2, ONE: true
+- Execution Time: 53:43.67s ~ 53m (all except IV1, WIV1, IV2)
+                  1:10:01.31s ~ 1h10m (IV1 and WIV1)
+                  7:26:08.73s ~ 7h26m (IV2)
+- Attacks: IV1 and IV3 attacks on corrupted voters
 - Outcome: Strong/Weak E2E verifiability is NOT satisfied for corrupted voters.
+           Strong/Weak E2E verifiability is satisfied for honest voters.
 
 *)
 
@@ -241,22 +253,40 @@ query cr: spkey; event(LinkFailed(cr)).
 (* Verifiability queries *)
 
 (* Individual Verifiability 1 *)
-(*
+
 query id, tr, v, v1: bitstring, cr: spkey;
       event(Verified(id, cr, v)) && event(Link(cr, tr)) && event(BB_res(tr, v1))
       ==> v = v1.
-*)
+
+(* Weak Individual Verifiability 1 *)
+
+query id, tr, v, v1: bitstring, cr: spkey;
+      event(Verified(id, cr, v)) && event(Link(cr, tr)) && event(BB_res(tr, v1))
+      ==> v = v1 || event(Corrupted(id)).
+
 (* Individual Verifiability 2 *)
-(*
+
 query id1, id2, v1, v2: bitstring, cr: spkey;
       event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
       ==> id1 = id2.
+
+(* Weak Individual Verifiability 2 *)
+(*
+query id1, id2, v1, v2: bitstring, cr: spkey;
+      event(Verified(id1, cr, v1)) && event(Verified(id2, cr, v2))
+      ==> id1 = id2 || event(Corrupted(id1)) || event(Corrupted(id2)).
 *)
 
 (* Individual Verifiability 3 *)
 
 query id, tr, v: bitstring, cr: spkey;
       event(Verified(id, cr, v)) ==> event(Link(cr, tr)) && event(BB_reg(cr)).
+
+(* Weak Individual Verifiability 3 *)
+
+query id, tr, v: bitstring, cr: spkey;
+      event(Verified(id, cr, v)) ==> ( event(Link(cr, tr)) && event(BB_reg(cr)) )
+                                  || ( event(Corrupted(id)) ).
 
 (* Eligibility Verifiability *)
 

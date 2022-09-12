@@ -40,7 +40,7 @@ Notes:
 Results:
 
 - Success: WIV1, WIV2, WIV3, ELI, RES1, RES2, REG1, REG2, LINK1, LINK2, ONE: true
-- Execution Time: 2:21:37.75s ~ 2h21m
+- Execution Time: 1:10:41.82s ~ 1h10m
 - Attacks: -
 - Outcome: Strong/Weak E2E verifiability is satisfied for honest voters.
 
