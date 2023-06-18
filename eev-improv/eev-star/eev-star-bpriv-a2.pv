@@ -1,0 +1,544 @@
+(*
+Estonian E-Voting Star Protocol specification and verification for ballot privacy
+with the attacker model A2 that combines:
+
+- Corrupt Network modeled by a public channel for the communication
+between Voter and VC,
+
+- Honest Voters Alice and Bob, and
+
+- Corrupt Voter Charlie which allows the attacker to cast a vote.
+
+Results:
+
+- Execution Time: 2.680s
+- Attacks: -
+- Outcome: Ballot privacy is satisfied.
+
+*)
+
+(*** DECLARATIONS ***)
+
+free pub: channel.
+free notif: channel [private].
+
+const Alice: bitstring.
+const Bob: bitstring.
+const Charlie: bitstring.
+const A: bitstring.
+const B: bitstring.
+const tally: bitstring.
+const notification: bitstring.
+
+(* ELGamal encryption *)
+
+fun pk(bitstring): bitstring.
+fun enc(bitstring, bitstring, bitstring): bitstring.
+fun zkp(bitstring, bitstring, bitstring, bitstring): bitstring.
+
+reduc forall m, skE, r: bitstring;
+      dec(enc(m, pk(skE), r), skE) = m.
+
+reduc forall m, pkE, r, pkid: bitstring;
+      ver(zkp(enc(m, pkE, r), m, r, pkid), enc(m, pkE, r), pkE, pkid) = true.
+
+(* Digital signature *)
+
+fun sign(bitstring, bitstring): bitstring.
+
+reduc forall m, skid: bitstring;
+      verify(sign(m, skid), m, pk(skid)) = true.
+
+(* Hashing *)
+
+fun h(bitstring): bitstring.
+
+(*** TABLES ***)
+
+table CertTMS(bitstring).
+table CertRS(bitstring).
+table CertVC(bitstring).
+table CertID(bitstring, bitstring).
+table EID(bitstring, bitstring, bitstring).
+table PkE(bitstring).
+table SkE(bitstring).
+table Cand(bitstring).
+table Voter(bitstring).
+table Voted(bitstring, bitstring, bitstring, bitstring).
+table Registered(bitstring, bitstring).
+table Stored(bitstring, bitstring, bitstring, bitstring, bitstring, bitstring, bitstring).
+table StoreData(bitstring, bitstring, bitstring, bitstring, bitstring, bitstring, bitstring).
+table AliceCiphertext(bitstring).
+table BobCiphertext(bitstring).
+table CharlieCiphertext(bitstring).
+table Started(bitstring).
+table Ended(bitstring).
+table Ver(bitstring, bitstring).
+
+(*** EVENTS ***)
+
+event KeyTMS(bitstring).
+event KeyRS(bitstring).
+event KeyVC(bitstring).
+event KeyID(bitstring, bitstring).
+event BB_key(bitstring).
+event Verified(bitstring, bitstring, bitstring).
+event Once(bitstring, bitstring).
+
+(* RESTRICTIONS *)
+
+(* TMS has one signature key pair *)
+restriction pkTMS1, pkTMS2: bitstring;
+            event(KeyTMS(pkTMS1)) && event(KeyTMS(pkTMS2)) ==> pkTMS1 = pkTMS2.
+
+(* RS has one signature key pair *)
+restriction pkRS1, pkRS2: bitstring;
+            event(KeyRS(pkRS1)) && event(KeyRS(pkRS2)) ==> pkRS1 = pkRS2.
+
+(* VC has one signature key pair *)
+restriction pkVC1, pkVC2: bitstring;
+            event(KeyVC(pkVC1)) && event(KeyVC(pkVC2)) ==> pkVC1 = pkVC2.
+
+(* each identity has one signature key pair *)
+restriction id, pkid1, pkid2: bitstring;
+            event(KeyID(id, pkid1)) && event(KeyID(id, pkid2)) ==> pkid1 = pkid2.
+
+(* there is only one election key *)
+restriction pkE1, pkE2: bitstring;
+            event(BB_key(pkE1)) && event(BB_key(pkE2)) ==> pkE1 = pkE2.
+
+(* ballots are tallied once *)
+restriction n1, n2: bitstring;
+            event(Once(tally, n1)) && event(Once(tally, n2)) ==> n1 = n2.
+
+(*** QUERIES ***)
+(*
+query pkE: bitstring; event(BB_key(pkE)).
+query id, v, vid: bitstring; event(Verified(id, v, vid)).
+query n: bitstring; event(Once(tally, n)).
+*)
+
+(*** MACROS ***)
+
+(***** Registration Authority (RA) *****)
+
+(* RA generates an EID for identities, here for Alice, Bob and Charlie *)
+let RegistrationAuthority =
+  (* generate a secret key for Alice, Bob and Charlie *)
+ 	new skA: bitstring;
+  new skB: bitstring;
+  new skC: bitstring;
+  (* compute corresponding public keys *)
+ 	let pkA = pk(skA) in
+  let pkB = pk(skB) in
+  let pkC = pk(skC) in
+  (* record id and public key on KeyID to ensure each id has one public key *)
+  event KeyID(Alice, pkA);
+  event KeyID(Bob, pkB);
+  event KeyID(Charlie, pkC);
+  (* record id and public key on CertID *)
+  insert CertID(Alice, pkA);
+  insert CertID(Bob, pkB);
+  insert CertID(Charlie, pkC);
+  (* record id's signature key pair on EID *)
+  insert EID(Alice, pkA, skA);
+  insert EID(Bob, pkB, skB);
+  insert EID(Charlie, pkC, skC);
+  (* send public information to the public channel *)
+  out(pub, (Alice, pkA));
+  out(pub, (Bob, pkB));
+  out(pub, (Charlie, pkC)).
+
+
+(***** Election Organizer (EO) *****)
+
+(* E0 generates election key pair for the encryption and decryption of the votes *)
+let GenerateElectionKeyPair =
+  (* generate an election secret key *)
+	new skE: bitstring;
+  (* compute corresponding election public key *)
+	let pkE = pk(skE) in
+  (* record BB_key to ensure there is one election key *)
+  event BB_key(pkE);
+  (* record pkE on PkE to share with each VoteApp *)
+	insert PkE(pkE);
+  (* record skE on SkE to use for the decryption *)
+  insert SkE(skE);
+  (* send pkE to the public channel *)
+  out(pub, pkE).
+
+(* E0 determines the eligible candidates, here A and B *)
+let SetupCandidates =
+  (* record first candidate A on Cand *)
+	insert Cand(A);
+  (* record second candidate B on Cand *)
+	insert Cand(B).
+
+(* E0 determines the eligible voters who hold valid certificates *)
+let SetupVoters =
+  (* recall id's certificate to ensure id has valid credentials for voting *)
+  get CertID(=Alice, pkA) in
+  get CertID(=Bob, pkB) in
+  get CertID(=Charlie, pkC) in
+  (* record id as voter *)
+	insert Voter(Alice);
+  insert Voter(Bob);
+  insert Voter(Charlie).
+
+(* EO notifies voters when a ballot is stored after registered for their id;
+   i.e. it gets a record from Registered, matches it with StoredData, and
+   sends a notification to the voter, and insert all the data in Stored.
+   In this way, we ensure that the voters will verify a ballot after they get
+   a related notification. *)
+let NotifyVoters =
+  (* recall the registration confirmation on Registered *)
+  get Registered(req, reg) in
+  (* recall the ballot data recorded on StoreData *)
+  get StoreData(id, pkid, b, vid, t, tm, =reg) in
+  (* send a notification saying a new ballot with vid is stored for id *)
+  out(notif, (id, vid, notification));
+  (* record the ballot data on Stored *)
+  insert Stored(id, pkid, b, vid, t, tm, reg).
+
+(* EO decrypts the ciphertexts received from IBBP to obtain the election result,
+   here decrypts the ciphertexts of Alice, Bob and Charlie *)
+let DecryptCiphertexts =
+  (* get ciphertexts of Alice, Bob and Charlie *)
+  get AliceCiphertext(cA) in
+  get BobCiphertext(cB) in
+  get CharlieCiphertext(cC) in
+  (* recall election secret key *)
+  get SkE(skE) in
+  let ResultLeft = (dec(cA, skE), dec(cB, skE), dec(cC, skE)) in
+  let ResultRight = (dec(cB, skE), dec(cA, skE), dec(cC, skE)) in
+  (* send result of votes to the public channel *)
+  out(pub, choice[ResultLeft, ResultRight]).
+
+let ElectionOrganizer = ( GenerateElectionKeyPair | SetupCandidates | SetupVoters
+                        | (!NotifyVoters) | DecryptCiphertexts ).
+
+
+(***** Time Marking Service (TMS) *****)
+
+(* TMS labels each ballot information received from VC with current time
+   if the voter who cast the ballot holds a valid certificate *)
+let TimeMarking(skTMS: bitstring) =
+  (* recall the voter's certificate to ensure its validity *)
+  get CertID(id, pkid) in
+  (* receive a ciphertext hash to label it with time mark *)
+  in(pub, (=pkid, hash: bitstring));
+  (* get current time t *)
+  new t: bitstring;
+  (* attach t to hash and sign *)
+  let tm = sign((pkid, hash, t), skTMS) in
+  (* send time t with the signature tm back *)
+  out(pub, (t, tm)).
+
+let TimeMarkingService =
+  (* generate a secret key *)
+  new skTMS: bitstring;
+  (* compute corresponding public key *)
+  let pkTMS = pk(skTMS) in
+  (* record KeyTMS to ensure TMS has one pkTMS *)
+  event KeyTMS(pkTMS);
+  (* get certified for pkTMS *)
+  insert CertTMS(pkTMS);
+  (!TimeMarking(skTMS)).
+
+
+(***** Registration Service (RS) *****)
+
+(* RS registers ballot information received from VC in its database Registered
+   and sends its confirmation back to VC *)
+let RegisterBallot(skRS: bitstring, pkVC: bitstring) =
+  (* receive a registration request *)
+  in(pub, (vid: bitstring, hash: bitstring, req: bitstring));
+  (* verify the signature req w.r.t. (vid, hash) *)
+  if verify(req, (vid, hash), pkVC) = true then
+  (* generate a registration confirmation for req *)
+  let reg = sign(h((vid, hash)), skRS) in
+  (* record the pair (req, reg) for the audits *)
+  insert Registered(req, reg);
+  (* send registration confirmation reg back *)
+  out(pub, reg).
+
+let RegistrationService =
+  (* generate a secret key *)
+  new skRS: bitstring;
+  (* compute corresponding public key *)
+  let pkRS = pk(skRS) in
+  (* record KeyRS to ensure RS has one pkRS *)
+  event KeyRS(pkRS);
+  (* get certified for pkRS *)
+  insert CertRS(pkRS);
+  (* get VC's certificate to verify registration requests *)
+  get CertVC(pkVC) in
+  (!RegisterBallot(skRS, pkVC)).
+
+
+(***** Voters *****)
+
+(* The voters use their VoteApp to cast a ballot forwarded to VC. First,
+   they make a choice between A and B, encrypt and sign it, generate a
+   zero-knowledge proof for the knowledge of encryption randomness and
+   send the respective ballot to VC. Then, VoteApp receives an identifier
+   and confirmation for that ballot, which will form a QR code. QR code
+   is kept in the table Voted for individual verification together with
+   the vote cast to remind the voter. The following processes model
+   Alice's, Bob's and Charlie's VoteApp, respectively. *)
+
+let AliceVoteApp(Alice: bitstring, pkE: bitstring, pkRS: bitstring) =
+  (* get credentials from EID for signing the ballot *)
+  get EID(=Alice, pkA, skA) in
+  (* make choice among the candidates *)
+  let v = choice[A, B] in
+  (* generate a randomness for encryption *)
+	new r: bitstring;
+  (* encrypt the vote *)
+	let c = enc(v, pkE, r) in
+  (* sign the ciphertext *)
+	let s = sign(c, skA) in
+  (* generate zkp for the knowledge of randomness *)
+	let p = zkp(c, v, r, pkA) in
+  (* construct the ballot *)
+  let b = (c, s, p) in
+  (* send id and ballot to VC via public channel *)
+  out(pub, (Alice, b));
+  (* receive a notification saying that a ballot with vid is stored *)
+  in(notif, (=Alice, vid: bitstring, =notification));
+  (* receive the identifier vid with RS confirmation reg from VC *)
+  in(pub, (=vid, reg: bitstring));
+  (* verify the registration confirmation *)
+  if verify(reg, h((vid, h(b))), pkRS) = true then
+  (* record id, v and QR = (vid, r) for individual verification *)
+	insert Voted(Alice, v, vid, r).
+
+let BobVoteApp(Bob: bitstring, pkE: bitstring, pkRS: bitstring) =
+  (* get credentials from EID for signing the ballot *)
+  get EID(=Bob, pkB, skB) in
+  (* make choice among the candidates *)
+  let v = choice[B, A] in
+  (* generate a randomness for encryption *)
+	new r: bitstring;
+  (* encrypt the vote *)
+	let c = enc(v, pkE, r) in
+  (* sign the ciphertext *)
+	let s = sign(c, skB) in
+  (* generate zkp for the knowledge of randomness *)
+	let p = zkp(c, v, r, pkB) in
+  (* construct the ballot *)
+  let b = (c, s, p) in
+  (* send id and ballot to VC via public channel *)
+  out(pub, (Bob, b));
+  (* receive a notification saying that a ballot with vid is stored *)
+  in(notif, (=Bob, vid: bitstring, =notification));
+  (* receive the identifier vid with RS confirmation reg from VC *)
+  in(pub, (=vid, reg: bitstring));
+  (* verify the registration confirmation *)
+  if verify(reg, h((vid, h(b))), pkRS) = true then
+  (* record id, v and QR = (vid, r) for individual verification *)
+	insert Voted(Bob, v, vid, r).
+
+(* Unlike others, Charlie's VoteApp receives the ciphertext from the attacker
+   to sign it and generate a ballot since Charlie is a corrupt voter
+   in this specification. *)
+let CharlieVoteApp(Charlie: bitstring, pkE: bitstring, pkRS: bitstring) =
+  (* get credentials from EID for signing the ballot *)
+  get EID(=Charlie, pkC, skC) in
+  (* receive a vote, a ciphertext with an encryption randomness *)
+  in(pub, (v: bitstring, c: bitstring, r: bitstring));
+  (* sign the ciphertext *)
+	let s = sign(c, skC) in
+  (* generate zkp for the knowledge of randomness *)
+	let p = zkp(c, v, r, pkC) in
+  (* construct the ballot *)
+  let b = (c, s, p) in
+  (* send id and ballot to VC via public channel *)
+  out(pub, (Charlie, b));
+  (* receive a notification saying that a ballot with vid is stored *)
+  in(notif, (=Charlie, vid: bitstring, =notification));
+  (* receive the identifier vid with RS confirmation reg from VC *)
+  in(pub, (=vid, reg: bitstring));
+  (* verify the registration confirmation *)
+  if verify(reg, h((vid, h(b))), pkRS) = true then
+  (* record id, v and QR = (vid, r) for individual verification *)
+	insert Voted(Charlie, v, vid, r).
+
+(* The following process models the actions of VerApp and VC together
+   for the verification procedure: The table Voted represents the voter's
+   QR code reminding the vote cast for that QR code, whereas the tables
+   Stored and Ver represent the ballot stored with vid in the database
+   of VC, repectively the timeframe for that vid  *)
+let VerApp(pkE: bitstring, pkRS: bitstring) =
+  (* get QR = (vid, r) for id who voted for v *)
+  get Voted(id, v, vid, r) in
+  (* get id's certificate *)
+  get CertID(=id, pkid) in
+  (* check whether vid's verification timeframe has ended *)
+  get Ver(=vid, tOK) in
+  get Ended(=tOK) in 0
+  else
+    (* get id's ballot stored with vid *)
+    get Stored(=id, =pkid, (c: bitstring, s: bitstring, p: bitstring), =vid, t, tm, reg) in
+    (* ballot structure *)
+    let b = (c, s, p) in
+    (* verify the registration confirmation *)
+    if verify(reg, h((vid, h(b))), pkRS) = true then
+    (* verify the signature in the ballot *)
+    if verify(s, c, pkid) = true then
+    (* compute a ciphertext using the randomness r in the QR code *)
+    let c1 = enc(v, pkE, r) in
+    (* if c = c1 then *)
+    if c = c1 then
+    (* record Verified for the action of id's verification of v *)
+    event Verified(id, v, vid).
+
+let Voters =
+  (* get voter identities to ensure their eligibility *)
+  get Voter(=Alice) in
+  get Voter(=Bob) in
+  get Voter(=Charlie) in
+  (* get election public key to encrypt the votes with it *)
+  get PkE(pkE) in
+  (* get RS's certificate to verify registration confirmations *)
+  get CertRS(pkRS) in
+  ( (!AliceVoteApp(Alice, pkE, pkRS)) | (!BobVoteApp(Bob, pkE, pkRS))
+  | (!CharlieVoteApp(Charlie, pkE, pkRS)) | (!VerApp(pkE, pkRS)) ).
+
+
+(***** Vote Collector (VC) *****)
+
+(* VC first receives a ballot for an eligible id, acquires a time mark,
+   registers it to RS, and then stores it in the table Stored with an
+   identifier vid and all other acquired data. At the same time, it
+   starts the verification timeframe for the vid of the ballot. It also
+   sends the ballot confirmation (vid, reg) back. *)
+let StoreBallot(skVC: bitstring, pkTMS: bitstring, pkRS: bitstring, pkE: bitstring) =
+  (* get voter identity to ensure its eligibility *)
+  get Voter(id) in
+  (* get id's certificate to verify its signature *)
+  get CertID(=id, pkid) in
+  (* receive a ballot for id via public channel *)
+  in(pub, (=id, (c: bitstring, s: bitstring, p: bitstring)));
+  (* ballot structure *)
+  let b = (c, s, p) in
+  (* verify the signature in the ballot *)
+  if verify(s, c, pkid) = true then
+  (* verify the zkp in the ballot *)
+  if ver(p, c, pkE, pkid) = true then
+  (* send id's public key and hash of ciphertext for time marking *)
+  out(pub, (pkid, h(c)));
+  (* receive time t and signature tm *)
+  in(pub, (t: bitstring, tm: bitstring));
+  (* verify the signature tm w.r.t. (pkid, h(c), t) *)
+  if verify(tm, (pkid, h(c), t), pkTMS) = true then
+  (* generate an identifier vid for the ballot b *)
+  new vid: bitstring;
+  (* generate a registration request req for the ballot b *)
+  let req = sign((vid, h(b)), skVC) in
+  (* send vid, ballot hash and req to RS for registration *)
+  out(pub, (vid, h(b), req));
+  (* receive a registration confirmation reg *)
+  in(pub, reg: bitstring);
+  (* verify the signature reg w.r.t. h((vid, h(b))) *)
+  if verify(reg, h((vid, h(b))), pkRS) = true then
+  (* record id, pkid, b, and other data on StoreData *)
+  insert StoreData(id, pkid, b, vid, t, tm, reg);
+  (* start verification timeframe for vid *)
+  get Started(tOK) in
+  (* record verification timeframe for vid *)
+  insert Ver(vid, tOK);
+  (* send vid and reg to VoteApp as ballot confirmation *)
+  out(pub, (vid, reg)).
+
+let VoteCollector =
+  (* generate a secret key *)
+  new skVC: bitstring;
+  (* compute corresponding public key *)
+  let pkVC = pk(skVC) in
+  (* record KeyVC to ensure VC has one pkVC *)
+  event KeyVC(pkVC);
+  (* get certified for pkVC *)
+  insert CertVC(pkVC);
+  (* get TMS's certificate to verify time marks *)
+  get CertTMS(pkTMS) in
+  (* get RS's certificate to verify registration confirmations *)
+  get CertRS(pkRS) in
+  (* get election public key to verify zkp in the ballot *)
+	get PkE(pkE) in
+  (!StoreBallot(skVC, pkTMS, pkRS, pkE)).
+
+
+(***** I-Ballot Box Processor (IBBP) *****)
+
+(* IBBP receives all the stored ballots, checks whether they were registered
+   in the database of RS, checks the validity of the ballots with respect to
+   signature, zero-knowledge proof, time mark and registration confirmation,
+   then detaches the ciphertexts from the ballots for the decryption. In the
+   following, it only processes three ballots; Alice's, Bob's and Charlie's
+   ballot.  *)
+let IBallotBoxProcessor =
+  (* get Alice's, Bob's, Charlie's, RS's and VC's certificates *)
+  get CertID(=Alice, pkA) in
+  get CertID(=Bob, pkB) in
+  get CertID(=Charlie, pkC) in
+  get CertRS(pkRS) in
+  get CertVC(pkVC) in
+  (* get election public key from PkE *)
+  get PkE(pkE) in
+  (* get Alice's, Bob's and Charlie's ballot from Stored *)
+  get Stored(=Alice, =pkA, (cA: bitstring, sA: bitstring, pA: bitstring), vidA, tA, tmA, regA) in
+  get Stored(=Bob, =pkB, (cB: bitstring, sB: bitstring, pB: bitstring), vidB, tB, tmB, regB) in
+  get Stored(=Charlie, =pkC, (cC: bitstring, sC: bitstring, pC: bitstring), vidC, tC, tmC, regC) in
+  (* get registration confirmations of the ballots from Registered *)
+  get Registered(reqA, =regA) in
+  get Registered(reqB, =regB) in
+  get Registered(reqC, =regC) in
+  (* ballot structure *)
+  let bA = (cA, sA, pA) in
+  let bB = (cB, sB, pB) in
+  let bC = (cC, sC, pC) in
+  (* verify the signatures in the ballots *)
+  if verify(sA, cA, pkA) = true then
+  if verify(sB, cB, pkB) = true then
+  if verify(sC, cC, pkC) = true then
+  (* verify the zkp in the ballots *)
+  if ver(pA, cA, pkE, pkA) = true then
+  if ver(pB, cB, pkE, pkB) = true then
+  if ver(pC, cC, pkE, pkC) = true then
+  (* verify the signatures regA, regB, and regC from RS *)
+  if verify(regA, h((vidA, h(bA))), pkRS) = true then
+  if verify(regB, h((vidB, h(bB))), pkRS) = true then
+  if verify(regC, h((vidC, h(bC))), pkRS) = true then
+  (* verify the signatures reqA, reqB, and reqC from VC *)
+  if verify(reqA, (vidA, h(bA)), pkVC) = true then
+  if verify(reqB, (vidB, h(bB)), pkVC) = true then
+  if verify(reqC, (vidC, h(bC)), pkVC) = true then
+  (* generate a nonce to ensure ballots are tallied once *)
+  new nonce: bitstring;
+  (* record nonce to restrict tally procedure with one time *)
+  event Once(tally, nonce);
+  (* store Alice's, Bob's and Charlie's ciphertext *)
+  insert AliceCiphertext(cA);
+  insert BobCiphertext(cB);
+  insert CharlieCiphertext(cC).
+
+
+(***** Verification Timeframe *****)
+
+(* The following process starts a public verification timeframe, which is
+   decided by the attacker and ends it, recording them on the tables Started
+   and Ended that will be recalled during storage and verification of the ballot. *)
+let StartVerificationTimeframe =
+  (* start a public timeframe by getting tOK via public channel *)
+  in(pub, tOK: bitstring);
+  insert Started(tOK);
+  (* end the timeframe *)
+  insert Ended(tOK).
+
+
+(*** MAIN PROCESS ***)
+
+process	 ( RegistrationAuthority | ElectionOrganizer | TimeMarkingService
+         | RegistrationService | Voters | VoteCollector | IBallotBoxProcessor
+         | (!StartVerificationTimeframe) )
